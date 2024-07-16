@@ -1,0 +1,27 @@
+﻿<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>TypeScript HTML App</title>
+    <link rel="stylesheet" href="app.css" type="text/css" />
+    <script src="app.js"></script>
+</head>
+<body>
+    <div class="wrapper">
+        <p style="grid-row-start:1" class="header">source code</p>
+
+        <textarea style="grid-row-start:2" class="sourceCode"></textarea>
+
+        <div class="buttons">
+            <image src="run.svg" style="margin:0 5px 0 0" class="button" />
+            <image src="terminate.svg" class="button" />
+        </div>        
+
+        <div style="grid-row-start:4" class="console" id="console" tabindex="0">
+            <div id="inputBox" class="inputBox">
+            </div>
+        </div>
+    </div>
+</body>
+</html>

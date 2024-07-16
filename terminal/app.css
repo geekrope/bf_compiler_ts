@@ -1,0 +1,88 @@
+﻿body {
+    padding: 0;
+    margin: 0;
+}
+
+.wrapper {
+    display: grid;
+    grid-template-rows: repeat(3,min-content) auto;
+    width: calc(100vw - 10px);
+    height: calc(100vh - 10px);
+    padding: 5px;
+}
+
+.header {
+    font: 24px monospace;
+    padding: 0;
+    margin: 0 0 5px 0;
+}
+
+.sourceCode {
+    font: 24px monospace;
+    height: 40vh;
+    background-color: #f0f0f0;
+    border: none;
+    padding: 0;
+    outline: none;
+    margin: 0 0 5px 0;
+    min-height: 25vh;
+    max-height: 60vh;
+    resize: vertical;
+}
+
+.console {
+    background-color: black;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    outline: none;
+    border: none;
+    box-shadow: none;
+    user-select: none;
+    padding: 5px;
+}
+
+.text {
+    font: 24px monospace;
+    word-wrap: break-word;
+    color: white;
+    height: auto;
+    padding: 0;
+    margin: 0;
+}
+
+.inputBox {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.input {
+    border: none;
+    animation: blink 1s infinite steps(1);
+    transition: none;
+}
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    margin: 0 0 5px 0;
+}
+
+.button {
+    grid-row-start: 3;
+    width: 30px;
+    height: 30px;
+}
+
+@keyframes blink {
+    0% {
+        background-color: white;
+        color: black;
+    }
+
+    50% {
+        background-color: transparent;
+        color: white;
+    }
+}
