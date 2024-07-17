@@ -10,6 +10,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 const consoleID = "console";
 const inputBoxID = "inputBox";
+const caretID = "caret";
 String.prototype.splice = function (index, deleteCount, insert) {
     return this.slice(0, index) + insert + this.slice(index + deleteCount, this.length);
 };
@@ -17,6 +18,7 @@ class TerminalViewModel {
     constructor() {
         this._consoleElement = null;
         this._inputBoxElement = null;
+        this._caretElement = null;
     }
     get consoleElement() {
         if (this._consoleElement) {
@@ -34,10 +36,18 @@ class TerminalViewModel {
             return this._inputBoxElement = document.getElementById(inputBoxID);
         }
     }
+    get caretElement() {
+        if (this._caretElement) {
+            return this._caretElement;
+        }
+        else {
+            return this._caretElement = document.getElementById(caretID);
+        }
+    }
     createCharacterElement(character) {
         const element = document.createElement("p");
         element.innerHTML = character;
-        element.className = "text input";
+        element.className = "text";
         return element;
     }
     createLineElement(content) {
@@ -46,35 +56,42 @@ class TerminalViewModel {
         element.className = "text";
         return element;
     }
-    addCharacter(characterElement, currentCharacterElement) {
-        const nextCharacterElement = currentCharacterElement === null || currentCharacterElement === void 0 ? void 0 : currentCharacterElement.nextElementSibling;
-        if (nextCharacterElement) {
-            this.inputBoxElement.insertBefore(characterElement, nextCharacterElement);
-        }
-        else {
-            this.inputBoxElement.appendChild(characterElement);
-        }
+    addCharacter(characterElement) {
+        this.inputBoxElement.insertBefore(characterElement, this.caretElement);
     }
     addLine(lineElement) {
         this.consoleElement.insertBefore(lineElement, this.inputBoxElement);
     }
-    clearInputBox() {
-        this.inputBoxElement.innerHTML = "";
+    focus() {
+        this.caretElement.style.display = "block";
+    }
+    unfocus() {
+        this.caretElement.style.display = "none";
     }
     removeCharacter(characterElement) {
         if (characterElement) {
             this.inputBoxElement.removeChild(characterElement);
         }
     }
-    removeSelection(element) {
-        if (element) {
-            element.classList.remove("input");
+    clearInputBox() {
+        const caret = this.caretElement;
+        this.inputBoxElement.innerHTML = "";
+        this.inputBoxElement.appendChild(caret);
+    }
+    moveCaret(nextCharacterElement) {
+        this.inputBoxElement.removeChild(this.caretElement);
+        if (nextCharacterElement) {
+            this.inputBoxElement.insertBefore(this.caretElement, nextCharacterElement);
+        }
+        else {
+            this.inputBoxElement.appendChild(this.caretElement);
         }
     }
-    setSelection(element) {
-        if (element) {
-            element.classList.add("input");
-        }
+    removeCaretBlink(timeout) {
+        this.caretElement.style.animation = "none";
+        setTimeout((() => {
+            this.caretElement.style.removeProperty("animation");
+        }).bind(this), timeout);
     }
 }
 class Terminal {
@@ -108,17 +125,18 @@ class Terminal {
                             this._onInput.forEach((handler) => {
                                 handler(event.key);
                             });
+                            this._viewModel.removeCaretBlink(500);
                             this._onInput.splice(0, this._onInput.length);
                         }
                 }
             }
         }).bind(this);
         (_a = document.getElementById(consoleID)) === null || _a === void 0 ? void 0 : _a.addEventListener("focusin", (() => {
-            this._viewModel.setSelection(this.currentCharacter);
+            this._viewModel.focus();
             this._terminalFocused = true;
         }).bind(this));
         (_b = document.getElementById(consoleID)) === null || _b === void 0 ? void 0 : _b.addEventListener("focusout", (() => {
-            this._viewModel.removeSelection(this.currentCharacter);
+            this._viewModel.unfocus();
             this._terminalFocused = false;
         }).bind(this));
     }
@@ -128,24 +146,24 @@ class Terminal {
     get currentCharacter() {
         return this._characters[this._caretPosition];
     }
+    updateCaretPosition() {
+        this._viewModel.moveCaret(this._characters[this._caretPosition + 1]);
+    }
     moveCaretLeft() {
-        this._viewModel.removeSelection(this.currentCharacter);
-        if (this._caretPosition > 0) {
+        if (this._caretPosition > -1) {
             this._caretPosition--;
         }
-        this._viewModel.setSelection(this.currentCharacter);
+        this.updateCaretPosition();
     }
     moveCaretRight() {
-        this._viewModel.removeSelection(this.currentCharacter);
         if (this._caretPosition < this._characters.length - 1) {
             this._caretPosition++;
         }
-        this._viewModel.setSelection(this.currentCharacter);
+        this.updateCaretPosition();
     }
     insert(character) {
         const characterElement = this._viewModel.createCharacterElement(character);
-        this._viewModel.removeSelection(this.currentCharacter);
-        this._viewModel.addCharacter(characterElement, this.currentCharacter);
+        this._viewModel.addCharacter(characterElement);
         this._caretPosition++;
         this._input = this._input.splice(this._caretPosition, 0, character);
         this._characters.splice(this._caretPosition, 0, characterElement);
@@ -154,13 +172,7 @@ class Terminal {
         this._viewModel.removeCharacter(this.currentCharacter);
         this._characters.splice(this._caretPosition, 1);
         this._input = this._input.splice(this._caretPosition, 1, "");
-        if (this._characters.length == 0) {
-            this._caretPosition = -1;
-        }
-        else if (this._caretPosition > 0) {
-            this._caretPosition--;
-        }
-        this._viewModel.setSelection(this.currentCharacter);
+        this.moveCaretLeft();
     }
     enter() {
         const input = this.input == "" ? "⠀" : this.input;

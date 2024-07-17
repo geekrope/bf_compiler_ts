@@ -1,5 +1,6 @@
 ﻿const consoleID = "console";
 const inputBoxID = "inputBox";
+const caretID = "caret";
 
 interface String
 {
@@ -15,6 +16,7 @@ class TerminalViewModel
 {
 	private _consoleElement: HTMLElement | null;
 	private _inputBoxElement: HTMLElement | null;
+	private _caretElement: HTMLElement | null;
 
 	private get consoleElement(): HTMLElement
 	{
@@ -38,12 +40,23 @@ class TerminalViewModel
 			return this._inputBoxElement = document.getElementById(inputBoxID)!;
 		}
 	}
+	private get caretElement(): HTMLElement
+	{
+		if (this._caretElement)
+		{
+			return this._caretElement
+		}
+		else
+		{
+			return this._caretElement = document.getElementById(caretID)!;
+		}
+	}
 
 	public createCharacterElement(character: string): HTMLElement
 	{
 		const element = document.createElement("p");
 		element.innerHTML = character;
-		element.className = "text input";
+		element.className = "text";
 
 		return element;
 	}
@@ -55,26 +68,21 @@ class TerminalViewModel
 
 		return element;
 	}
-	public addCharacter(characterElement: HTMLElement, currentCharacterElement: HTMLElement | undefined)
+	public addCharacter(characterElement: HTMLElement)
 	{
-		const nextCharacterElement = currentCharacterElement?.nextElementSibling;
-
-		if (nextCharacterElement)
-		{
-			this.inputBoxElement.insertBefore(characterElement, nextCharacterElement);
-		}
-		else
-		{
-			this.inputBoxElement.appendChild(characterElement);
-		}
+		this.inputBoxElement.insertBefore(characterElement, this.caretElement);
 	}
 	public addLine(lineElement: HTMLElement)
 	{
 		this.consoleElement.insertBefore(lineElement, this.inputBoxElement);
 	}
-	public clearInputBox()
+	public focus(): void
 	{
-		this.inputBoxElement.innerHTML = "";
+		this.caretElement.style.display = "block";
+	}
+	public unfocus(): void
+	{
+		this.caretElement.style.display = "none";
 	}
 	public removeCharacter(characterElement: HTMLElement | undefined)
 	{
@@ -83,25 +91,41 @@ class TerminalViewModel
 			this.inputBoxElement.removeChild(characterElement);
 		}
 	}
-	public removeSelection(element: Element | undefined): void
+	public clearInputBox()
 	{
-		if (element)
+		const caret = this.caretElement;
+
+		this.inputBoxElement.innerHTML = "";
+		this.inputBoxElement.appendChild(caret);
+	}
+	public moveCaret(nextCharacterElement: HTMLElement | undefined)
+	{
+		this.inputBoxElement.removeChild(this.caretElement);
+
+		if (nextCharacterElement)
 		{
-			element.classList.remove("input");
+			this.inputBoxElement.insertBefore(this.caretElement, nextCharacterElement);
+		}
+		else
+		{
+			this.inputBoxElement.appendChild(this.caretElement);
 		}
 	}
-	public setSelection(element: Element | undefined): void
+	public removeCaretBlink(timeout: number)
 	{
-		if (element)
+		this.caretElement.style.animation = "none";
+
+		setTimeout((() =>
 		{
-			element.classList.add("input");
-		}
+			this.caretElement.style.removeProperty("animation");
+		}).bind(this), timeout);
 	}
 
 	public constructor()
 	{
 		this._consoleElement = null;
 		this._inputBoxElement = null;
+		this._caretElement = null;
 	}
 }
 
@@ -136,34 +160,33 @@ class Terminal
 		return this._characters[this._caretPosition];
 	}
 
+	private updateCaretPosition()
+	{
+		this._viewModel.moveCaret(this._characters[this._caretPosition + 1]);
+	}
 	private moveCaretLeft(): void
 	{
-		this._viewModel.removeSelection(this.currentCharacter);
-
-		if (this._caretPosition > 0)
+		if (this._caretPosition > -1)
 		{
 			this._caretPosition--;
 		}
 
-		this._viewModel.setSelection(this.currentCharacter);
+		this.updateCaretPosition();
 	}
 	private moveCaretRight(): void
 	{
-		this._viewModel.removeSelection(this.currentCharacter);
-
 		if (this._caretPosition < this._characters.length - 1)
 		{
 			this._caretPosition++;
 		}
 
-		this._viewModel.setSelection(this.currentCharacter);
+		this.updateCaretPosition();
 	}
 	private insert(character: string)
 	{
 		const characterElement = this._viewModel.createCharacterElement(character);
 
-		this._viewModel.removeSelection(this.currentCharacter);
-		this._viewModel.addCharacter(characterElement, this.currentCharacter);
+		this._viewModel.addCharacter(characterElement);
 		this._caretPosition++;
 		this._input = this._input.splice(this._caretPosition, 0, character);
 		this._characters.splice(this._caretPosition, 0, characterElement);
@@ -174,16 +197,7 @@ class Terminal
 		this._characters.splice(this._caretPosition, 1);
 		this._input = this._input.splice(this._caretPosition, 1, "");
 
-		if (this._characters.length == 0)
-		{
-			this._caretPosition = -1;
-		}
-		else if (this._caretPosition > 0)
-		{
-			this._caretPosition--;
-		}
-
-		this._viewModel.setSelection(this.currentCharacter);
+		this.moveCaretLeft();
 	}
 	private enter()
 	{
@@ -262,6 +276,7 @@ class Terminal
 								handler(event.key);
 							});
 
+							this._viewModel.removeCaretBlink(500);
 							this._onInput.splice(0, this._onInput.length);
 						}
 				}
@@ -269,12 +284,12 @@ class Terminal
 		}).bind(this);
 		document.getElementById(consoleID)?.addEventListener("focusin", (() =>
 		{
-			this._viewModel.setSelection(this.currentCharacter);
+			this._viewModel.focus();
 			this._terminalFocused = true;
 		}).bind(this));
 		document.getElementById(consoleID)?.addEventListener("focusout", (() =>
 		{
-			this._viewModel.removeSelection(this.currentCharacter);
+			this._viewModel.unfocus();
 			this._terminalFocused = false;
 		}).bind(this));
 	}

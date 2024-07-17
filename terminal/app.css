@@ -59,8 +59,16 @@
 
 .input {
     border: none;
+}
+
+.caret {
+    display: block;
+    height: 1lh;
+    background: white;
+    width: 2px;
     animation: blink 1s infinite steps(1);
     transition: none;
+    transform: translateY(-2px);
 }
 
 .buttons {
@@ -78,11 +86,9 @@
 @keyframes blink {
     0% {
         background-color: white;
-        color: black;
     }
 
     50% {
         background-color: transparent;
-        color: white;
     }
 }
