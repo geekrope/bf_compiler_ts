@@ -11,6 +11,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 const consoleID = "console";
 const inputBoxID = "inputBox";
 const caretID = "caret";
+const sourceCodeId = "sourceCode";
 String.prototype.splice = function (index, deleteCount, insert) {
     return this.slice(0, index) + insert + this.slice(index + deleteCount, this.length);
 };
@@ -59,8 +60,13 @@ class TerminalViewModel {
     addCharacter(characterElement) {
         this.inputBoxElement.insertBefore(characterElement, this.caretElement);
     }
-    addLine(lineElement) {
-        this.consoleElement.insertBefore(lineElement, this.inputBoxElement);
+    addLine(lineElement, before = null) {
+        if (before) {
+            this.consoleElement.insertBefore(lineElement, before);
+        }
+        else {
+            this.consoleElement.appendChild(lineElement);
+        }
     }
     focus() {
         this.caretElement.style.display = "block";
@@ -77,6 +83,11 @@ class TerminalViewModel {
         const caret = this.caretElement;
         this.inputBoxElement.innerHTML = "";
         this.inputBoxElement.appendChild(caret);
+    }
+    popUpInputBox() {
+        const inputBox = this.inputBoxElement;
+        this.consoleElement.removeChild(inputBox);
+        this.consoleElement.appendChild(inputBox);
     }
     moveCaret(nextCharacterElement) {
         this.inputBoxElement.removeChild(this.caretElement);
@@ -101,6 +112,7 @@ class Terminal {
         this._caretPosition = -1;
         this._input = "";
         this._characters = [];
+        this._currentLine = null;
         this._onInput = [];
         this._terminalFocused = false;
         this._waitingForCharacter = false;
@@ -122,11 +134,12 @@ class Terminal {
                     default:
                         if (event.key.length == 1) {
                             this.insert(event.key);
-                            this._onInput.forEach((handler) => {
-                                handler(event.key);
-                            });
+                            let currentHandler = this._onInput.shift();
+                            while (currentHandler) {
+                                currentHandler(event.key);
+                                currentHandler = this._onInput.shift();
+                            }
                             this._viewModel.removeCaretBlink(500);
-                            this._onInput.splice(0, this._onInput.length);
                         }
                 }
             }
@@ -174,36 +187,63 @@ class Terminal {
         this._input = this._input.splice(this._caretPosition, 1, "");
         this.moveCaretLeft();
     }
-    enter() {
-        const input = this.input == "" ? "⠀" : this.input;
-        const lineElement = this._viewModel.createLineElement(input);
-        this._viewModel.addLine(lineElement);
+    clearInput() {
         this._viewModel.clearInputBox();
+        this._characters.splice(0, this._characters.length);
         this._input = "";
+    }
+    enter(substituteEmptyInput = "⠀") {
+        const input = this.input == "" ? substituteEmptyInput : this.input;
+        const lineElement = this._viewModel.createLineElement(input);
+        this._viewModel.addLine(lineElement, this._viewModel.inputBoxElement);
+        this.clearInput();
+        this._viewModel.popUpInputBox();
+        this._currentLine = null;
         this._caretPosition = -1;
     }
     addEventListener(_type, handler) {
         this._onInput.push(handler);
     }
+    writeKey(value) {
+        if (this._currentLine == null) {
+            this._currentLine = this._viewModel.createLineElement(value);
+            this._viewModel.addLine(this._currentLine);
+        }
+        else {
+            this._currentLine.innerText += value;
+        }
+    }
     writeLine(value) {
         const lineElement = this._viewModel.createLineElement(value);
         this._viewModel.addLine(lineElement);
-        this._viewModel.clearInputBox();
-        this._input = "";
-        this._caretPosition = -1;
+        this.enter("");
     }
     readKey() {
         this._waitingForCharacter = true;
         return new Promise(((resolve, _reject) => {
-            this.addEventListener("onInput", (key) => {
+            this.addEventListener("onInput", ((key) => {
                 resolve(key);
-            });
+                this._waitingForCharacter = false;
+            }).bind(this));
         }).bind(this));
     }
 }
+let terminal = undefined;
+function run() {
+    const sourceCodeElement = document.getElementById(sourceCodeId);
+    if (sourceCodeElement && terminal) {
+        const programText = sourceCodeElement.value;
+        const tokens = Interpreter.Tokenize(programText, { ignoreUnknownCharacters: true });
+        const environment = new TypescriptExecutionEnvironment({ allowNegativePointer: true, dynamicHeap: false }, terminal);
+        const block = Interpreter.ExpressionTree(tokens, environment);
+        TypescriptExecutionEnvironment.Execute(block);
+    }
+    else if (!terminal) {
+        console.log("window has not loaded yet");
+    }
+}
 window.addEventListener("load", () => __awaiter(void 0, void 0, void 0, function* () {
-    const terminal = new Terminal();
-    terminal.writeLine("!!!COMPILATION STARTED!!!");
-    console.log(yield terminal.readKey());
+    terminal = new Terminal();
+    terminal.writeLine("brainfvck execution envirnment successfully loaded");
 }));
 //# sourceMappingURL=app.js.map

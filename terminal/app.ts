@@ -1,6 +1,7 @@
 ﻿const consoleID = "console";
 const inputBoxID = "inputBox";
 const caretID = "caret";
+const sourceCodeId = "sourceCode";
 
 interface String
 {
@@ -18,7 +19,7 @@ class TerminalViewModel
 	private _inputBoxElement: HTMLElement | null;
 	private _caretElement: HTMLElement | null;
 
-	private get consoleElement(): HTMLElement
+	public get consoleElement(): HTMLElement
 	{
 		if (this._consoleElement)
 		{
@@ -29,7 +30,7 @@ class TerminalViewModel
 			return this._consoleElement = document.getElementById(consoleID)!;
 		}
 	}
-	private get inputBoxElement(): HTMLElement
+	public get inputBoxElement(): HTMLElement
 	{
 		if (this._inputBoxElement)
 		{
@@ -40,7 +41,7 @@ class TerminalViewModel
 			return this._inputBoxElement = document.getElementById(inputBoxID)!;
 		}
 	}
-	private get caretElement(): HTMLElement
+	public get caretElement(): HTMLElement
 	{
 		if (this._caretElement)
 		{
@@ -72,9 +73,16 @@ class TerminalViewModel
 	{
 		this.inputBoxElement.insertBefore(characterElement, this.caretElement);
 	}
-	public addLine(lineElement: HTMLElement)
+	public addLine(lineElement: HTMLElement, before: HTMLElement | null = null)
 	{
-		this.consoleElement.insertBefore(lineElement, this.inputBoxElement);
+		if (before)
+		{
+			this.consoleElement.insertBefore(lineElement, before);
+		}
+		else
+		{
+			this.consoleElement.appendChild(lineElement);
+		}
 	}
 	public focus(): void
 	{
@@ -97,6 +105,13 @@ class TerminalViewModel
 
 		this.inputBoxElement.innerHTML = "";
 		this.inputBoxElement.appendChild(caret);
+	}
+	public popUpInputBox()
+	{
+		const inputBox = this.inputBoxElement;
+
+		this.consoleElement.removeChild(inputBox);
+		this.consoleElement.appendChild(inputBox);
 	}
 	public moveCaret(nextCharacterElement: HTMLElement | undefined)
 	{
@@ -147,6 +162,7 @@ class Terminal
 	private _caretPosition: number;
 	private _input: string;
 	private _characters: HTMLElement[];
+	private _currentLine: HTMLElement | null;
 	private _onInput: InputEventHanlder[];
 	private _terminalFocused: boolean;
 	private _waitingForCharacter: boolean;
@@ -199,14 +215,23 @@ class Terminal
 
 		this.moveCaretLeft();
 	}
-	private enter()
+	private clearInput()
 	{
-		const input = this.input == "" ? "⠀" : this.input;
+		this._viewModel.clearInputBox();
+		this._characters.splice(0, this._characters.length);
+		this._input = "";
+	}
+	private enter(substituteEmptyInput: string = "⠀")
+	{
+		const input = this.input == "" ? substituteEmptyInput : this.input;
 		const lineElement = this._viewModel.createLineElement(input);
 
-		this._viewModel.addLine(lineElement);
-		this._viewModel.clearInputBox();
-		this._input = "";
+		this._viewModel.addLine(lineElement, this._viewModel.inputBoxElement);
+
+		this.clearInput();
+
+		this._viewModel.popUpInputBox();
+		this._currentLine = null;
 		this._caretPosition = -1;
 	}
 
@@ -216,14 +241,24 @@ class Terminal
 		this._onInput.push(handler);
 	}
 
+	public writeKey(value: string)
+	{
+		if (this._currentLine == null)
+		{
+			this._currentLine = this._viewModel.createLineElement(value);
+			this._viewModel.addLine(this._currentLine);
+		}
+		else
+		{
+			this._currentLine.innerText += value;
+		}
+	}
 	public writeLine(value: string)
 	{
 		const lineElement = this._viewModel.createLineElement(value);
 
 		this._viewModel.addLine(lineElement);
-		this._viewModel.clearInputBox();
-		this._input = "";
-		this._caretPosition = -1;
+		this.enter("");
 	}
 	public readKey(): Promise<string>
 	{
@@ -231,10 +266,11 @@ class Terminal
 
 		return new Promise(((resolve: (value: string) => void, _reject: any) =>
 		{
-			this.addEventListener("onInput", (key) =>
+			this.addEventListener("onInput", ((key: string) =>
 			{
 				resolve(key);
-			})
+				this._waitingForCharacter = false;
+			}).bind(this));
 		}).bind(this));
 	}
 
@@ -244,6 +280,7 @@ class Terminal
 		this._caretPosition = -1;
 		this._input = "";
 		this._characters = [];
+		this._currentLine = null;
 		this._onInput = [];
 		this._terminalFocused = false;
 		this._waitingForCharacter = false;
@@ -271,13 +308,14 @@ class Terminal
 						{
 							this.insert(event.key);
 
-							this._onInput.forEach((handler) =>
+							let currentHandler = this._onInput.shift();
+							while (currentHandler)
 							{
-								handler(event.key);
-							});
+								currentHandler(event.key);
+								currentHandler = this._onInput.shift();
+							}
 
 							this._viewModel.removeCaretBlink(500);
-							this._onInput.splice(0, this._onInput.length);
 						}
 				}
 			}
@@ -295,10 +333,28 @@ class Terminal
 	}
 }
 
+let terminal: Terminal | undefined = undefined;
+
+function run()
+{
+	const sourceCodeElement = document.getElementById(sourceCodeId) as HTMLTextAreaElement;
+
+	if (sourceCodeElement && terminal)
+	{
+		const programText = sourceCodeElement.value;
+		const tokens = Interpreter.Tokenize(programText, { ignoreUnknownCharacters: true });
+		const environment = new TypescriptExecutionEnvironment({ allowNegativePointer: true, dynamicHeap: false }, terminal);
+		const block = Interpreter.ExpressionTree(tokens, environment);
+		TypescriptExecutionEnvironment.Execute(block);
+	}
+	else if (!terminal)
+	{
+		console.log("window has not loaded yet");
+	}
+}
+
 window.addEventListener("load", async () =>
 {
-	const terminal = new Terminal();
-
-	terminal.writeLine("!!!COMPILATION STARTED!!!");
-	console.log(await terminal.readKey());
+	terminal = new Terminal();
+	terminal.writeLine("brainfvck execution envirnment successfully loaded");
 });
