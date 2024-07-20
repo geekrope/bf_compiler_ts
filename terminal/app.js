@@ -60,13 +60,8 @@ class TerminalViewModel {
     addCharacter(characterElement) {
         this.inputBoxElement.insertBefore(characterElement, this.caretElement);
     }
-    addLine(lineElement, before = null) {
-        if (before) {
-            this.consoleElement.insertBefore(lineElement, before);
-        }
-        else {
-            this.consoleElement.appendChild(lineElement);
-        }
+    addLine(lineElement) {
+        this.consoleElement.insertBefore(lineElement, this.inputBoxElement);
     }
     focus() {
         this.caretElement.style.display = "block";
@@ -111,13 +106,14 @@ class Terminal {
         this._viewModel = new TerminalViewModel();
         this._caretPosition = -1;
         this._input = "";
+        this._inputCharacters = [];
         this._characters = [];
         this._currentLine = null;
         this._onInput = [];
         this._terminalFocused = false;
-        this._waitingForCharacter = false;
+        this._waitingForInput = false;
         document.onkeydown = ((event) => {
-            if (this._terminalFocused && this._waitingForCharacter) {
+            if (this._terminalFocused && this._waitingForInput) {
                 switch (event.code) {
                     case "Backspace":
                         this.erase();
@@ -134,11 +130,6 @@ class Terminal {
                     default:
                         if (event.key.length == 1) {
                             this.insert(event.key);
-                            let currentHandler = this._onInput.shift();
-                            while (currentHandler) {
-                                currentHandler(event.key);
-                                currentHandler = this._onInput.shift();
-                            }
                             this._viewModel.removeCaretBlink(500);
                         }
                 }
@@ -195,14 +186,24 @@ class Terminal {
     enter(substituteEmptyInput = "⠀") {
         const input = this.input == "" ? substituteEmptyInput : this.input;
         const lineElement = this._viewModel.createLineElement(input);
-        this._viewModel.addLine(lineElement, this._viewModel.inputBoxElement);
+        this._viewModel.addLine(lineElement);
+        this._inputCharacters = this._inputCharacters.concat(this._input.split(''));
+        this.nofityEventHandlers("onInput", this._inputCharacters.shift());
         this.clearInput();
         this._viewModel.popUpInputBox();
         this._currentLine = null;
+        this._waitingForInput = false;
         this._caretPosition = -1;
     }
     addEventListener(_type, handler) {
         this._onInput.push(handler);
+    }
+    nofityEventHandlers(_type, key) {
+        let currentHandler = this._onInput.shift();
+        while (currentHandler) {
+            currentHandler(key);
+            currentHandler = this._onInput.shift();
+        }
     }
     writeKey(value) {
         if (this._currentLine == null) {
@@ -219,13 +220,21 @@ class Terminal {
         this.enter("");
     }
     readKey() {
-        this._waitingForCharacter = true;
-        return new Promise(((resolve, _reject) => {
-            this.addEventListener("onInput", ((key) => {
-                resolve(key);
-                this._waitingForCharacter = false;
+        if (this._inputCharacters.length == 0) {
+            this._waitingForInput = true;
+            return new Promise(((resolve, _reject) => {
+                this.addEventListener("onInput", ((key) => {
+                    resolve(key);
+                }).bind(this));
             }).bind(this));
-        }).bind(this));
+        }
+        else {
+            return new Promise(((resolve, _reject) => {
+                const key = this._inputCharacters.shift();
+                this.nofityEventHandlers("onInput", key);
+                resolve(key);
+            }).bind(this));
+        }
     }
 }
 let terminal = undefined;

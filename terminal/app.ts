@@ -73,16 +73,9 @@ class TerminalViewModel
 	{
 		this.inputBoxElement.insertBefore(characterElement, this.caretElement);
 	}
-	public addLine(lineElement: HTMLElement, before: HTMLElement | null = null)
+	public addLine(lineElement: HTMLElement)
 	{
-		if (before)
-		{
-			this.consoleElement.insertBefore(lineElement, before);
-		}
-		else
-		{
-			this.consoleElement.appendChild(lineElement);
-		}
+		this.consoleElement.insertBefore(lineElement, this.inputBoxElement);
 	}
 	public focus(): void
 	{
@@ -156,16 +149,22 @@ interface TerminalEventMap
 	"onInput": InputEventHanlder;
 }
 
+interface TerminalEventNotificationMap
+{
+	"onInput": [string];
+}
+
 class Terminal
 {
 	private _viewModel: TerminalViewModel;
 	private _caretPosition: number;
 	private _input: string;
+	private _inputCharacters: string[];
 	private _characters: HTMLElement[];
 	private _currentLine: HTMLElement | null;
 	private _onInput: InputEventHanlder[];
 	private _terminalFocused: boolean;
-	private _waitingForCharacter: boolean;
+	private _waitingForInput: boolean;
 
 	private get input(): string
 	{
@@ -226,19 +225,32 @@ class Terminal
 		const input = this.input == "" ? substituteEmptyInput : this.input;
 		const lineElement = this._viewModel.createLineElement(input);
 
-		this._viewModel.addLine(lineElement, this._viewModel.inputBoxElement);
+		this._viewModel.addLine(lineElement);
+		this._inputCharacters = this._inputCharacters.concat(this._input.split(''));
+		this.nofityEventHandlers("onInput", this._inputCharacters.shift()!);
 
 		this.clearInput();
 
 		this._viewModel.popUpInputBox();
 		this._currentLine = null;
+		this._waitingForInput = false;
 		this._caretPosition = -1;
 	}
 
-	public addEventListener(type: TerminalEventType, handler: TerminalEventMap[TerminalEventType]): void
-	public addEventListener(_type: "onInput", handler: InputEventHanlder): void
+	private addEventListener(type: TerminalEventType, handler: TerminalEventMap[TerminalEventType]): void
+	private addEventListener(_type: "onInput", handler: InputEventHanlder): void
 	{
 		this._onInput.push(handler);
+	}
+	private nofityEventHandlers(type: TerminalEventType, ...args: TerminalEventNotificationMap[TerminalEventType]): void
+	private nofityEventHandlers(_type: "onInput", key: string): void
+	{
+		let currentHandler = this._onInput.shift();
+		while (currentHandler)
+		{
+			currentHandler(key);
+			currentHandler = this._onInput.shift();
+		}
 	}
 
 	public writeKey(value: string)
@@ -262,16 +274,28 @@ class Terminal
 	}
 	public readKey(): Promise<string>
 	{
-		this._waitingForCharacter = true;
-
-		return new Promise(((resolve: (value: string) => void, _reject: any) =>
+		if (this._inputCharacters.length == 0)
 		{
-			this.addEventListener("onInput", ((key: string) =>
+			this._waitingForInput = true;
+
+			return new Promise(((resolve: (value: string) => void, _reject: any) =>
 			{
-				resolve(key);
-				this._waitingForCharacter = false;
+				this.addEventListener("onInput", ((key: string) =>
+				{
+					resolve(key);					
+				}).bind(this));
 			}).bind(this));
-		}).bind(this));
+		}
+		else
+		{
+			return new Promise(((resolve: (value: string) => void, _reject: any) =>
+			{
+				const key = this._inputCharacters.shift()!;
+
+				this.nofityEventHandlers("onInput", key);
+				resolve(key);
+			}).bind(this));
+		}
 	}
 
 	public constructor()
@@ -279,15 +303,16 @@ class Terminal
 		this._viewModel = new TerminalViewModel();
 		this._caretPosition = -1;
 		this._input = "";
+		this._inputCharacters = [];
 		this._characters = [];
 		this._currentLine = null;
 		this._onInput = [];
 		this._terminalFocused = false;
-		this._waitingForCharacter = false;
+		this._waitingForInput = false;
 
 		document.onkeydown = ((event: KeyboardEvent) =>
 		{
-			if (this._terminalFocused && this._waitingForCharacter)
+			if (this._terminalFocused && this._waitingForInput)
 			{
 				switch (event.code)
 				{
@@ -307,13 +332,6 @@ class Terminal
 						if (event.key.length == 1)
 						{
 							this.insert(event.key);
-
-							let currentHandler = this._onInput.shift();
-							while (currentHandler)
-							{
-								currentHandler(event.key);
-								currentHandler = this._onInput.shift();
-							}
 
 							this._viewModel.removeCaretBlink(500);
 						}
