@@ -159,7 +159,7 @@ class Terminal
 	private _viewModel: TerminalViewModel;
 	private _caretPosition: number;
 	private _input: string;
-	private _inputCharacters: string[];
+	private _suspendedCharacters: string[];
 	private _characters: HTMLElement[];
 	private _currentLine: HTMLElement | null;
 	private _onInput: InputEventHanlder[];
@@ -169,6 +169,10 @@ class Terminal
 	private get input(): string
 	{
 		return this._input;
+	}
+	private get nextCharacter(): string | undefined
+	{
+		return this._suspendedCharacters.shift();
 	}
 	private get currentCharacter(): HTMLElement | undefined
 	{
@@ -224,10 +228,15 @@ class Terminal
 	{
 		const input = this.input == "" ? substituteEmptyInput : this.input;
 		const lineElement = this._viewModel.createLineElement(input);
+		const character = this.nextCharacter;
 
 		this._viewModel.addLine(lineElement);
-		this._inputCharacters = this._inputCharacters.concat(this._input.split(''));
-		this.nofityEventHandlers("onInput", this._inputCharacters.shift()!);
+		this._suspendedCharacters = this._suspendedCharacters.concat(this._input.split(''));
+
+		if (character)
+		{
+			this.nofityEventHandlers("onInput", this._suspendedCharacters.shift()!);
+		}
 
 		this.clearInput();
 
@@ -246,6 +255,7 @@ class Terminal
 	private nofityEventHandlers(_type: "onInput", key: string): void
 	{
 		let currentHandler = this._onInput.shift();
+
 		while (currentHandler)
 		{
 			currentHandler(key);
@@ -274,7 +284,9 @@ class Terminal
 	}
 	public readKey(): Promise<string>
 	{
-		if (this._inputCharacters.length == 0)
+		const suspendedCharacter = this.nextCharacter;
+
+		if (!suspendedCharacter)
 		{
 			this._waitingForInput = true;
 
@@ -282,7 +294,7 @@ class Terminal
 			{
 				this.addEventListener("onInput", ((key: string) =>
 				{
-					resolve(key);					
+					resolve(key);
 				}).bind(this));
 			}).bind(this));
 		}
@@ -290,10 +302,9 @@ class Terminal
 		{
 			return new Promise(((resolve: (value: string) => void, _reject: any) =>
 			{
-				const key = this._inputCharacters.shift()!;
+				this.nofityEventHandlers("onInput", suspendedCharacter);
 
-				this.nofityEventHandlers("onInput", key);
-				resolve(key);
+				resolve(suspendedCharacter);
 			}).bind(this));
 		}
 	}
@@ -303,7 +314,7 @@ class Terminal
 		this._viewModel = new TerminalViewModel();
 		this._caretPosition = -1;
 		this._input = "";
-		this._inputCharacters = [];
+		this._suspendedCharacters = [];
 		this._characters = [];
 		this._currentLine = null;
 		this._onInput = [];
@@ -351,28 +362,52 @@ class Terminal
 	}
 }
 
-let terminal: Terminal | undefined = undefined;
+let terminal: Terminal = new Terminal();
+let worker: ServiceWorkerRegistration | undefined = undefined;
+let broadcastChannelClient = new BroadcastChannel("sw-messages");
 
-function run()
+function runInterpreter(): Promise<ServiceWorkerRegistration | undefined>
+{
+	return navigator.serviceWorker.register("./interpreter.js");
+}
+function terminateInterpreter()
+{
+	worker?.unregister();
+	terminal.writeLine("terminated");
+}
+function runProgram()
 {
 	const sourceCodeElement = document.getElementById(sourceCodeId) as HTMLTextAreaElement;
 
-	if (sourceCodeElement && terminal)
-	{
-		const programText = sourceCodeElement.value;
-		const tokens = Interpreter.Tokenize(programText, { ignoreUnknownCharacters: true });
-		const environment = new TypescriptExecutionEnvironment({ allowNegativePointer: true, dynamicHeap: false }, terminal);
-		const block = Interpreter.ExpressionTree(tokens, environment);
-		TypescriptExecutionEnvironment.Execute(block);
-	}
-	else if (!terminal)
-	{
-		console.log("window has not loaded yet");
-	}
+	broadcastChannelClient.postMessage({ type: "run", data: sourceCodeElement.value });
 }
 
 window.addEventListener("load", async () =>
 {
-	terminal = new Terminal();
-	terminal.writeLine("brainfvck execution envirnment successfully loaded");
-});
+	worker = await runInterpreter();
+
+	if (worker)
+	{
+		terminal.writeLine("brainfvck execution environment successfully loaded");
+	}
+})
+broadcastChannelClient.addEventListener("message", (event) =>
+{
+	switch (event.data["type"])
+	{
+		case "info":
+			terminal.writeLine(event.data["data"]);
+			break;
+		case "reading":
+			terminal.readKey().then((input: string) =>
+			{
+				broadcastChannelClient.postMessage({ type: "input", data: input });
+			});
+			break;
+		case "print":
+			terminal.writeKey(event.data["data"])
+			break;
+		default:
+			console.error("unknown message type");
+	}
+})

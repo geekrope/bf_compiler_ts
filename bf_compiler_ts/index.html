@@ -6,7 +6,6 @@
     <title>TypeScript HTML App</title>
     <link rel="stylesheet" href="app.css" type="text/css" />
     <script src="app.js"></script>
-    <script src="interpreter.js"></script>
 </head>
 <body>
     <div class="wrapper">
@@ -15,8 +14,8 @@
         <textarea style="grid-row-start:2" id="sourceCode" class="sourceCode"></textarea>
 
         <div class="buttons">
-            <image src="run.svg" style="margin:0 5px 0 0" class="button" onclick="run()"/>
-            <image src="terminate.svg" class="button" />
+            <image src="run.svg" style="margin:0 5px 0 0" class="button" onclick="runProgram()"/>
+            <image src="terminate.svg" class="button" onclick="terminateInterpreter()"/>
         </div>        
 
         <div style="grid-row-start:4" class="console" id="console" tabindex="0">

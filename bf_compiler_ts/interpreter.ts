@@ -148,11 +148,23 @@ interface ExecutionEnvironment
 	Read(): Promise<void>;
 }
 
+interface IO
+{
+	Print(value: string): void;
+	Read(): Promise<string>;
+}
+
+interface ExecutionEnvironmentParameters
+{
+	dynamicHeap: boolean;
+	allowNegativePointer: boolean;
+}
+
 class TypescriptExecutionEnvironment implements ExecutionEnvironment
 {
 	protected pointer: number;
 	protected heap: Uint8Array;
-	protected terminal: Terminal;
+	protected io: IO;
 	protected parameters: ExecutionEnvironmentParameters;
 
 	public get Current(): number
@@ -213,21 +225,21 @@ class TypescriptExecutionEnvironment implements ExecutionEnvironment
 	}
 	public Print(): void
 	{
-		this.terminal.writeKey(String.fromCharCode(this.Current));
+		this.io.Print(String.fromCharCode(this.Current));
 	}
 	public async Read(): Promise<void>
 	{
-		const input = await this.terminal.readKey();
+		const input = await this.io.Read();
 
 		this.Current = input.charCodeAt(0);
 	}
 
-	constructor(parameters: ExecutionEnvironmentParameters, terminal: Terminal)
+	constructor(parameters: ExecutionEnvironmentParameters, terminal: IO)
 	{
 		this.pointer = 0;
 		this.heap = new Uint8Array(30000);
 		this.parameters = parameters;
-		this.terminal = terminal;
+		this.io = terminal;
 	}
 }
 
@@ -368,9 +380,64 @@ class Interpreter
 	}
 }
 
-interface ExecutionEnvironmentParameters
+class IOProxy implements IO
 {
-	dynamicHeap: boolean;
-	allowNegativePointer: boolean;
+	private _broadcastChannel: BroadcastChannel;
+
+	public Print(value: string): void
+	{
+		this._broadcastChannel.postMessage({ type: "print", data: value });
+	}
+	public Read(): Promise<string>
+	{
+		broadcastChannelWorker.postMessage({ type: "reading" });
+		return new Promise<string>((resolve, _reject) =>
+		{
+			inputEventListeners.push((value: string) =>
+			{
+				resolve(value);
+			})
+		})
+	}
+
+	public constructor(broadcastChannel: BroadcastChannel)
+	{
+		this._broadcastChannel = broadcastChannel;
+	}
 }
 
+const inputEventListeners: ((value: string) => void)[] = [];
+const broadcastChannelWorker = new BroadcastChannel("sw-messages");
+const io = new IOProxy(broadcastChannelWorker);
+
+function execute(code: string)
+{
+	const tokens = Interpreter.Tokenize(code, { ignoreUnknownCharacters: true });
+	const environment = new TypescriptExecutionEnvironment({ allowNegativePointer: true, dynamicHeap: false }, io);
+	const block = Interpreter.ExpressionTree(tokens, environment);
+
+	broadcastChannelWorker.postMessage({ type: "info", data: "running" });
+
+	TypescriptExecutionEnvironment.Execute(block);
+}
+
+broadcastChannelWorker.addEventListener("message", (event) =>
+{
+	switch (event.data["type"])
+	{
+		case "input":
+			let currentEventListener = inputEventListeners.shift();
+
+			while (currentEventListener) 
+			{
+				currentEventListener(event.data["data"] as string);
+				currentEventListener = inputEventListeners.shift();
+			}
+			break;
+		case "run":
+			execute(event.data["data"] as string);
+			break;
+		default:
+			console.error("unknown message type");
+	}
+});

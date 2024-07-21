@@ -108,7 +108,7 @@ class TypescriptExecutionEnvironment {
         this.pointer = 0;
         this.heap = new Uint8Array(30000);
         this.parameters = parameters;
-        this.terminal = terminal;
+        this.io = terminal;
     }
     get Current() {
         return this.heap[this.pointer];
@@ -152,11 +152,11 @@ class TypescriptExecutionEnvironment {
         this.heap[this.pointer] -= 1;
     }
     Print() {
-        this.terminal.writeKey(String.fromCharCode(this.Current));
+        this.io.Print(String.fromCharCode(this.Current));
     }
     Read() {
         return __awaiter(this, void 0, void 0, function* () {
-            const input = yield this.terminal.readKey();
+            const input = yield this.io.Read();
             this.Current = input.charCodeAt(0);
         });
     }
@@ -264,4 +264,46 @@ class Interpreter {
         return start;
     }
 }
+class IOProxy {
+    constructor(broadcastChannel) {
+        this._broadcastChannel = broadcastChannel;
+    }
+    Print(value) {
+        this._broadcastChannel.postMessage({ type: "print", data: value });
+    }
+    Read() {
+        broadcastChannelWorker.postMessage({ type: "reading" });
+        return new Promise((resolve, _reject) => {
+            inputEventListeners.push((value) => {
+                resolve(value);
+            });
+        });
+    }
+}
+const inputEventListeners = [];
+const broadcastChannelWorker = new BroadcastChannel("sw-messages");
+const io = new IOProxy(broadcastChannelWorker);
+function execute(code) {
+    const tokens = Interpreter.Tokenize(code, { ignoreUnknownCharacters: true });
+    const environment = new TypescriptExecutionEnvironment({ allowNegativePointer: true, dynamicHeap: false }, io);
+    const block = Interpreter.ExpressionTree(tokens, environment);
+    broadcastChannelWorker.postMessage({ type: "info", data: "running" });
+    TypescriptExecutionEnvironment.Execute(block);
+}
+broadcastChannelWorker.addEventListener("message", (event) => {
+    switch (event.data["type"]) {
+        case "input":
+            let currentEventListener = inputEventListeners.shift();
+            while (currentEventListener) {
+                currentEventListener(event.data["data"]);
+                currentEventListener = inputEventListeners.shift();
+            }
+            break;
+        case "run":
+            execute(event.data["data"]);
+            break;
+        default:
+            console.error("unknown message type");
+    }
+});
 //# sourceMappingURL=interpreter.js.map
