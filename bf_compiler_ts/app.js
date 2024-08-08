@@ -189,11 +189,11 @@ class Terminal {
     enter(substituteEmptyInput = "⠀") {
         const input = this.input == "" ? substituteEmptyInput : this.input;
         const lineElement = this._viewModel.createLineElement(input);
-        const character = this.nextCharacter;
         this._viewModel.addLine(lineElement);
         this._suspendedCharacters = this._suspendedCharacters.concat(this._input.split(''));
+        const character = this.nextCharacter;
         if (character) {
-            this.nofityEventHandlers("onInput", this._suspendedCharacters.shift());
+            this.nofityEventHandlers("onInput", character);
         }
         this.clearInput();
         this._viewModel.popUpInputBox();
@@ -243,41 +243,42 @@ class Terminal {
         }
     }
 }
-let terminal = new Terminal();
+let terminal = undefined;
 let worker = undefined;
-let broadcastChannelClient = new BroadcastChannel("sw-messages");
+let broadcastChannelClient = undefined;
 function runInterpreter() {
     return navigator.serviceWorker.register("./interpreter.js");
 }
 function terminateInterpreter() {
-    worker === null || worker === void 0 ? void 0 : worker.unregister();
-    terminal.writeLine("terminated");
+    throw Error("not implemented");
 }
 function runProgram() {
     const sourceCodeElement = document.getElementById(sourceCodeId);
-    broadcastChannelClient.postMessage({ type: "run", data: sourceCodeElement.value });
+    broadcastChannelClient === null || broadcastChannelClient === void 0 ? void 0 : broadcastChannelClient.postMessage({ type: "run", data: sourceCodeElement.value });
 }
 window.addEventListener("load", () => __awaiter(void 0, void 0, void 0, function* () {
+    terminal = new Terminal();
+    broadcastChannelClient = new BroadcastChannel("sw-messages");
     worker = yield runInterpreter();
+    broadcastChannelClient.addEventListener("message", (event) => {
+        switch (event.data["type"]) {
+            case "info":
+                terminal === null || terminal === void 0 ? void 0 : terminal.writeLine(event.data["data"]);
+                break;
+            case "reading":
+                terminal === null || terminal === void 0 ? void 0 : terminal.readKey().then((input) => {
+                    broadcastChannelClient === null || broadcastChannelClient === void 0 ? void 0 : broadcastChannelClient.postMessage({ type: "input", data: input });
+                });
+                break;
+            case "print":
+                terminal === null || terminal === void 0 ? void 0 : terminal.writeKey(event.data["data"]);
+                break;
+            default:
+                console.error("unknown message type");
+        }
+    });
     if (worker) {
         terminal.writeLine("brainfvck execution environment successfully loaded");
     }
 }));
-broadcastChannelClient.addEventListener("message", (event) => {
-    switch (event.data["type"]) {
-        case "info":
-            terminal.writeLine(event.data["data"]);
-            break;
-        case "reading":
-            terminal.readKey().then((input) => {
-                broadcastChannelClient.postMessage({ type: "input", data: input });
-            });
-            break;
-        case "print":
-            terminal.writeKey(event.data["data"]);
-            break;
-        default:
-            console.error("unknown message type");
-    }
-});
 //# sourceMappingURL=app.js.map

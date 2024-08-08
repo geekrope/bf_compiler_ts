@@ -62,7 +62,7 @@
 }
 
 .caret {
-    display: block;
+    display: none;
     height: 1lh;
     background: white;
     width: 2px;

@@ -228,14 +228,15 @@ class Terminal
 	{
 		const input = this.input == "" ? substituteEmptyInput : this.input;
 		const lineElement = this._viewModel.createLineElement(input);
-		const character = this.nextCharacter;
 
 		this._viewModel.addLine(lineElement);
 		this._suspendedCharacters = this._suspendedCharacters.concat(this._input.split(''));
 
+		const character = this.nextCharacter;
+
 		if (character)
 		{
-			this.nofityEventHandlers("onInput", this._suspendedCharacters.shift()!);
+			this.nofityEventHandlers("onInput", character);
 		}
 
 		this.clearInput();
@@ -362,9 +363,9 @@ class Terminal
 	}
 }
 
-let terminal: Terminal = new Terminal();
+let terminal: Terminal | undefined = undefined;
 let worker: ServiceWorkerRegistration | undefined = undefined;
-let broadcastChannelClient = new BroadcastChannel("sw-messages");
+let broadcastChannelClient: BroadcastChannel | undefined = undefined;
 
 function runInterpreter(): Promise<ServiceWorkerRegistration | undefined>
 {
@@ -372,42 +373,44 @@ function runInterpreter(): Promise<ServiceWorkerRegistration | undefined>
 }
 function terminateInterpreter()
 {
-	worker?.unregister();
-	terminal.writeLine("terminated");
+	throw Error("not implemented");
 }
 function runProgram()
 {
 	const sourceCodeElement = document.getElementById(sourceCodeId) as HTMLTextAreaElement;
 
-	broadcastChannelClient.postMessage({ type: "run", data: sourceCodeElement.value });
+	broadcastChannelClient?.postMessage({ type: "run", data: sourceCodeElement.value });
 }
 
 window.addEventListener("load", async () =>
 {
+	terminal = new Terminal();
+	broadcastChannelClient = new BroadcastChannel("sw-messages");
 	worker = await runInterpreter();
+
+	broadcastChannelClient.addEventListener("message", (event) =>
+	{
+		switch (event.data["type"])
+		{
+			case "info":
+				terminal?.writeLine(event.data["data"]);
+				break;
+			case "reading":
+				terminal?.readKey().then((input: string) =>
+				{
+					broadcastChannelClient?.postMessage({ type: "input", data: input });
+				});
+				break;
+			case "print":
+				terminal?.writeKey(event.data["data"])
+				break;
+			default:
+				console.error("unknown message type");
+		}
+	});
 
 	if (worker)
 	{
 		terminal.writeLine("brainfvck execution environment successfully loaded");
-	}
-})
-broadcastChannelClient.addEventListener("message", (event) =>
-{
-	switch (event.data["type"])
-	{
-		case "info":
-			terminal.writeLine(event.data["data"]);
-			break;
-		case "reading":
-			terminal.readKey().then((input: string) =>
-			{
-				broadcastChannelClient.postMessage({ type: "input", data: input });
-			});
-			break;
-		case "print":
-			terminal.writeKey(event.data["data"])
-			break;
-		default:
-			console.error("unknown message type");
 	}
 })
