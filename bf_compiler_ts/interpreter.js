@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var Token;
 (function (Token) {
     Token[Token["invalid"] = 0] = "invalid";
@@ -33,10 +24,8 @@ class Block {
     }
 }
 class EmptyBlock extends Block {
-    Execute() {
-        return __awaiter(this, void 0, void 0, function* () {
-            // do nothing
-        });
+    async Execute() {
+        // do nothing
     }
     constructor(next, context) {
         super(next, context);
@@ -47,10 +36,8 @@ class FunctionalBlock extends Block {
         super(next, context);
         this.action = action;
     }
-    Execute() {
-        return __awaiter(this, void 0, void 0, function* () {
-            yield this.action(this.context);
-        });
+    async Execute() {
+        await this.action(this.context);
     }
 }
 class CycleStartBlock extends Block {
@@ -75,10 +62,8 @@ class CycleStartBlock extends Block {
     set Next(value) {
         this.next = value;
     }
-    Execute() {
-        return __awaiter(this, void 0, void 0, function* () {
-            // do nothing
-        });
+    async Execute() {
+        // do nothing
     }
 }
 class CycleEndBlock extends Block {
@@ -97,10 +82,8 @@ class CycleEndBlock extends Block {
     set Next(value) {
         this.next = value;
     }
-    Execute() {
-        return __awaiter(this, void 0, void 0, function* () {
-            // do nothing
-        });
+    async Execute() {
+        // do nothing
     }
 }
 class TypescriptExecutionEnvironment {
@@ -116,14 +99,12 @@ class TypescriptExecutionEnvironment {
     set Current(value) {
         this.heap[this.pointer] = value;
     }
-    static Execute(block) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let current = block;
-            while (current !== null) {
-                yield current.Execute();
-                current = current.Next;
-            }
-        });
+    static async Execute(block) {
+        let current = block;
+        while (current !== null) {
+            await current.Execute();
+            current = current.Next;
+        }
     }
     Next() {
         this.pointer++;
@@ -154,11 +135,9 @@ class TypescriptExecutionEnvironment {
     Print() {
         this.io.Print(String.fromCharCode(this.Current));
     }
-    Read() {
-        return __awaiter(this, void 0, void 0, function* () {
-            const input = yield this.io.Read();
-            this.Current = input.charCodeAt(0);
-        });
+    async Read() {
+        const input = await this.io.Read();
+        this.Current = input.charCodeAt(0);
     }
 }
 class Interpreter {
@@ -207,34 +186,34 @@ class Interpreter {
             let upcomingBlock;
             switch (tokens[index]) {
                 case Token.next:
-                    upcomingBlock = new FunctionalBlock(null, environment, (context) => __awaiter(this, void 0, void 0, function* () {
+                    upcomingBlock = new FunctionalBlock(null, environment, async (context) => {
                         context.Next();
-                    }));
+                    });
                     break;
                 case Token.previous:
-                    upcomingBlock = new FunctionalBlock(null, environment, (context) => __awaiter(this, void 0, void 0, function* () {
+                    upcomingBlock = new FunctionalBlock(null, environment, async (context) => {
                         context.Previous();
-                    }));
+                    });
                     break;
                 case Token.add:
-                    upcomingBlock = new FunctionalBlock(null, environment, (context) => __awaiter(this, void 0, void 0, function* () {
+                    upcomingBlock = new FunctionalBlock(null, environment, async (context) => {
                         context.Add();
-                    }));
+                    });
                     break;
                 case Token.subtract:
-                    upcomingBlock = new FunctionalBlock(null, environment, (context) => __awaiter(this, void 0, void 0, function* () {
+                    upcomingBlock = new FunctionalBlock(null, environment, async (context) => {
                         context.Subtract();
-                    }));
+                    });
                     break;
                 case Token.print:
-                    upcomingBlock = new FunctionalBlock(null, environment, (context) => __awaiter(this, void 0, void 0, function* () {
+                    upcomingBlock = new FunctionalBlock(null, environment, async (context) => {
                         context.Print();
-                    }));
+                    });
                     break;
                 case Token.read:
-                    upcomingBlock = new FunctionalBlock(null, environment, (context) => __awaiter(this, void 0, void 0, function* () {
-                        yield context.Read();
-                    }));
+                    upcomingBlock = new FunctionalBlock(null, environment, async (context) => {
+                        await context.Read();
+                    });
                     break;
                 case Token.cycleBegin:
                     const cycleBeginBlock = new CycleStartBlock(null, environment);
@@ -264,15 +243,28 @@ class Interpreter {
         return start;
     }
 }
+class StandardBroadcastChannel {
+    constructor(messagePort) {
+        this.messagePort = messagePort;
+    }
+    postMessage(type, data = undefined) {
+        if (data) {
+            this.messagePort.postMessage({ type: type, data: data });
+        }
+        else {
+            this.messagePort.postMessage({ type: type });
+        }
+    }
+}
 class IOProxy {
     constructor(broadcastChannel) {
         this._broadcastChannel = broadcastChannel;
     }
     Print(value) {
-        this._broadcastChannel.postMessage({ type: "print", data: value });
+        this._broadcastChannel.postMessage("print", value);
     }
     Read() {
-        broadcastChannelWorker.postMessage({ type: "reading" });
+        this._broadcastChannel.postMessage("reading");
         return new Promise((resolve, _reject) => {
             inputEventListeners.push((value) => {
                 resolve(value);
@@ -281,16 +273,19 @@ class IOProxy {
     }
 }
 const inputEventListeners = [];
-const broadcastChannelWorker = new BroadcastChannel("sw-messages");
-const io = new IOProxy(broadcastChannelWorker);
-function execute(code) {
+function execute(code, messagePort) {
+    const broadcastChannel = new StandardBroadcastChannel(messagePort);
+    const io = new IOProxy(broadcastChannel);
     const tokens = Interpreter.Tokenize(code, { ignoreUnknownCharacters: true });
     const environment = new TypescriptExecutionEnvironment({ allowNegativePointer: true, dynamicHeap: false }, io);
     const block = Interpreter.ExpressionTree(tokens, environment);
-    broadcastChannelWorker.postMessage({ type: "info", data: "running" });
+    broadcastChannel.postMessage("info", "running");
+    const startTime = Date.now();
     TypescriptExecutionEnvironment.Execute(block);
+    const endTime = Date.now();
+    broadcastChannel.postMessage("info", `completed in: ${endTime - startTime} ms`);
 }
-broadcastChannelWorker.addEventListener("message", (event) => {
+this.addEventListener("message", (event) => {
     switch (event.data["type"]) {
         case "input":
             let currentEventListener = inputEventListeners.shift();
@@ -300,7 +295,7 @@ broadcastChannelWorker.addEventListener("message", (event) => {
             }
             break;
         case "run":
-            execute(event.data["data"]);
+            execute(event.data["data"], event.currentTarget);
             break;
         default:
             console.error("unknown message type");

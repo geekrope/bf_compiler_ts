@@ -201,14 +201,18 @@ class Terminal
 
 		this.updateCaretPosition();
 	}
-	private insert(character: string)
+	private insert(value: string)
 	{
-		const characterElement = this._viewModel.createCharacterElement(character);
+		for (let index = 0; index < value.length; index++)
+		{
+			const character = value[index]!;
+			const characterElement = this._viewModel.createCharacterElement(character);
 
-		this._viewModel.addCharacter(characterElement);
-		this._caretPosition++;
-		this._input = this._input.splice(this._caretPosition, 0, character);
-		this._characters.splice(this._caretPosition, 0, characterElement);
+			this._viewModel.addCharacter(characterElement);
+			this._caretPosition++;
+			this._input = this._input.splice(this._caretPosition, 0, character);
+			this._characters.splice(this._caretPosition, 0, characterElement);
+		}
 	}
 	private erase()
 	{
@@ -326,27 +330,48 @@ class Terminal
 		{
 			if (this._terminalFocused && this._waitingForInput)
 			{
-				switch (event.code)
+				if (event.ctrlKey)
 				{
-					case "Backspace":
-						this.erase();
-						break;
-					case "Enter":
-						this.enter();
-						break;
-					case "ArrowLeft":
-						this.moveCaretLeft();
-						break;
-					case "ArrowRight":
-						this.moveCaretRight();
-						break;
-					default:
-						if (event.key.length == 1)
-						{
-							this.insert(event.key);
+					switch (event.code)
+					{
+						case "KeyV":
+							navigator.clipboard
+								.readText()
+								.then(
+									((clipText: string) => { this.insert(clipText); }).bind(this)
+								);
+							break;
+						default:
+							break;
+					}
+				}
+				else
+				{
+					switch (event.code)
+					{
+						case "Backspace":
+							this.erase();
+							break;
+						case "Enter":
+							this.enter();
+							break;
+						case "ArrowLeft":
+							this.moveCaretLeft();
+							break;
+						case "ArrowRight":
+							this.moveCaretRight();
+							break;
+						case "ArrowRight":
+							this.moveCaretRight();
+							break;
+						default:
+							if (event.key.length == 1)
+							{
+								this.insert(event.key);
 
-							this._viewModel.removeCaretBlink(500);
-						}
+								this._viewModel.removeCaretBlink(500);
+							}
+					}
 				}
 			}
 		}).bind(this);
@@ -364,31 +389,12 @@ class Terminal
 }
 
 let terminal: Terminal | undefined = undefined;
-let worker: ServiceWorkerRegistration | undefined = undefined;
-let broadcastChannelClient: BroadcastChannel | undefined = undefined;
+let worker: Worker | undefined = undefined;
 
-function runInterpreter(): Promise<ServiceWorkerRegistration | undefined>
+function runWorker(): void
 {
-	return navigator.serviceWorker.register("./interpreter.js");
-}
-function terminateInterpreter()
-{
-	throw Error("not implemented");
-}
-function runProgram()
-{
-	const sourceCodeElement = document.getElementById(sourceCodeId) as HTMLTextAreaElement;
-
-	broadcastChannelClient?.postMessage({ type: "run", data: sourceCodeElement.value });
-}
-
-window.addEventListener("load", async () =>
-{
-	terminal = new Terminal();
-	broadcastChannelClient = new BroadcastChannel("sw-messages");
-	worker = await runInterpreter();
-
-	broadcastChannelClient.addEventListener("message", (event) =>
+	worker = new Worker('interpreter.js');
+	worker.addEventListener("message", (event) =>
 	{
 		switch (event.data["type"])
 		{
@@ -398,7 +404,7 @@ window.addEventListener("load", async () =>
 			case "reading":
 				terminal?.readKey().then((input: string) =>
 				{
-					broadcastChannelClient?.postMessage({ type: "input", data: input });
+					worker?.postMessage({ type: "input", data: input });
 				});
 				break;
 			case "print":
@@ -408,9 +414,22 @@ window.addEventListener("load", async () =>
 				console.error("unknown message type");
 		}
 	});
+}
+function terminateWorker()
+{
+	worker?.terminate();
+	terminal?.writeLine("terminated");
+}
+function runProgram()
+{
+	runWorker();
 
-	if (worker)
-	{
-		terminal.writeLine("brainfvck execution environment successfully loaded");
-	}
+	const sourceCodeElement = document.getElementById(sourceCodeId) as HTMLTextAreaElement;
+	worker?.postMessage({ type: "run", data: sourceCodeElement.value });
+}
+
+window.addEventListener("load", async () =>
+{
+	terminal = new Terminal();
+	terminal.writeLine("started");
 })

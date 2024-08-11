@@ -380,17 +380,44 @@ class Interpreter
 	}
 }
 
+interface BroadcastChannelProxy
+{
+	postMessage(type: string, data?: any | undefined): void;
+}
+
+class StandardBroadcastChannel
+{
+	private messagePort: MessagePort;
+
+	public postMessage(type: string, data: any | undefined = undefined): void
+	{
+		if (data)
+		{
+			this.messagePort.postMessage({ type: type, data: data });
+		}
+		else
+		{
+			this.messagePort.postMessage({ type: type });
+		}
+	}
+	public constructor(messagePort: MessagePort)
+	{
+		this.messagePort = messagePort;
+	}
+}
+
 class IOProxy implements IO
 {
-	private _broadcastChannel: BroadcastChannel;
+	private _broadcastChannel: BroadcastChannelProxy;
 
 	public Print(value: string): void
 	{
-		this._broadcastChannel.postMessage({ type: "print", data: value });
+		this._broadcastChannel.postMessage("print", value);
 	}
 	public Read(): Promise<string>
 	{
-		broadcastChannelWorker.postMessage({ type: "reading" });
+		this._broadcastChannel.postMessage("reading");
+
 		return new Promise<string>((resolve, _reject) =>
 		{
 			inputEventListeners.push((value: string) =>
@@ -400,28 +427,29 @@ class IOProxy implements IO
 		})
 	}
 
-	public constructor(broadcastChannel: BroadcastChannel)
+	public constructor(broadcastChannel: BroadcastChannelProxy)
 	{
 		this._broadcastChannel = broadcastChannel;
 	}
 }
 
 const inputEventListeners: ((value: string) => void)[] = [];
-const broadcastChannelWorker = new BroadcastChannel("sw-messages");
-const io = new IOProxy(broadcastChannelWorker);
 
-function execute(code: string)
+function execute(code: string, messagePort: MessagePort)
 {
+	const broadcastChannel = new StandardBroadcastChannel(messagePort);
+	const io = new IOProxy(broadcastChannel);
+
 	const tokens = Interpreter.Tokenize(code, { ignoreUnknownCharacters: true });
 	const environment = new TypescriptExecutionEnvironment({ allowNegativePointer: true, dynamicHeap: false }, io);
 	const block = Interpreter.ExpressionTree(tokens, environment);
 
-	broadcastChannelWorker.postMessage({ type: "info", data: "running" });
+	broadcastChannel.postMessage("info", "running");
 
 	TypescriptExecutionEnvironment.Execute(block);
 }
 
-broadcastChannelWorker.addEventListener("message", (event) =>
+this.addEventListener("message", (event) =>
 {
 	switch (event.data["type"])
 	{
@@ -435,7 +463,7 @@ broadcastChannelWorker.addEventListener("message", (event) =>
 			}
 			break;
 		case "run":
-			execute(event.data["data"] as string);
+			execute(event.data["data"] as string, event.currentTarget as MessagePort); //deprected
 			break;
 		default:
 			console.error("unknown message type");

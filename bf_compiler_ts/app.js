@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 const consoleID = "console";
 const inputBoxID = "inputBox";
 const caretID = "caret";
@@ -102,7 +93,6 @@ class TerminalViewModel {
 }
 class Terminal {
     constructor() {
-        var _a, _b;
         this._viewModel = new TerminalViewModel();
         this._caretPosition = -1;
         this._input = "";
@@ -114,32 +104,48 @@ class Terminal {
         this._waitingForInput = false;
         document.onkeydown = ((event) => {
             if (this._terminalFocused && this._waitingForInput) {
-                switch (event.code) {
-                    case "Backspace":
-                        this.erase();
-                        break;
-                    case "Enter":
-                        this.enter();
-                        break;
-                    case "ArrowLeft":
-                        this.moveCaretLeft();
-                        break;
-                    case "ArrowRight":
-                        this.moveCaretRight();
-                        break;
-                    default:
-                        if (event.key.length == 1) {
-                            this.insert(event.key);
-                            this._viewModel.removeCaretBlink(500);
-                        }
+                if (event.ctrlKey) {
+                    switch (event.code) {
+                        case "KeyV":
+                            navigator.clipboard
+                                .readText()
+                                .then(((clipText) => { this.insert(clipText); }).bind(this));
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                else {
+                    switch (event.code) {
+                        case "Backspace":
+                            this.erase();
+                            break;
+                        case "Enter":
+                            this.enter();
+                            break;
+                        case "ArrowLeft":
+                            this.moveCaretLeft();
+                            break;
+                        case "ArrowRight":
+                            this.moveCaretRight();
+                            break;
+                        case "ArrowRight":
+                            this.moveCaretRight();
+                            break;
+                        default:
+                            if (event.key.length == 1) {
+                                this.insert(event.key);
+                                this._viewModel.removeCaretBlink(500);
+                            }
+                    }
                 }
             }
         }).bind(this);
-        (_a = document.getElementById(consoleID)) === null || _a === void 0 ? void 0 : _a.addEventListener("focusin", (() => {
+        document.getElementById(consoleID)?.addEventListener("focusin", (() => {
             this._viewModel.focus();
             this._terminalFocused = true;
         }).bind(this));
-        (_b = document.getElementById(consoleID)) === null || _b === void 0 ? void 0 : _b.addEventListener("focusout", (() => {
+        document.getElementById(consoleID)?.addEventListener("focusout", (() => {
             this._viewModel.unfocus();
             this._terminalFocused = false;
         }).bind(this));
@@ -168,12 +174,15 @@ class Terminal {
         }
         this.updateCaretPosition();
     }
-    insert(character) {
-        const characterElement = this._viewModel.createCharacterElement(character);
-        this._viewModel.addCharacter(characterElement);
-        this._caretPosition++;
-        this._input = this._input.splice(this._caretPosition, 0, character);
-        this._characters.splice(this._caretPosition, 0, characterElement);
+    insert(value) {
+        for (let index = 0; index < value.length; index++) {
+            const character = value[index];
+            const characterElement = this._viewModel.createCharacterElement(character);
+            this._viewModel.addCharacter(characterElement);
+            this._caretPosition++;
+            this._input = this._input.splice(this._caretPosition, 0, character);
+            this._characters.splice(this._caretPosition, 0, characterElement);
+        }
     }
     erase() {
         this._viewModel.removeCharacter(this.currentCharacter);
@@ -245,40 +254,37 @@ class Terminal {
 }
 let terminal = undefined;
 let worker = undefined;
-let broadcastChannelClient = undefined;
-function runInterpreter() {
-    return navigator.serviceWorker.register("./interpreter.js");
-}
-function terminateInterpreter() {
-    throw Error("not implemented");
-}
-function runProgram() {
-    const sourceCodeElement = document.getElementById(sourceCodeId);
-    broadcastChannelClient === null || broadcastChannelClient === void 0 ? void 0 : broadcastChannelClient.postMessage({ type: "run", data: sourceCodeElement.value });
-}
-window.addEventListener("load", () => __awaiter(void 0, void 0, void 0, function* () {
-    terminal = new Terminal();
-    broadcastChannelClient = new BroadcastChannel("sw-messages");
-    worker = yield runInterpreter();
-    broadcastChannelClient.addEventListener("message", (event) => {
+function runWorker() {
+    worker = new Worker('interpreter.js');
+    worker.addEventListener("message", (event) => {
         switch (event.data["type"]) {
             case "info":
-                terminal === null || terminal === void 0 ? void 0 : terminal.writeLine(event.data["data"]);
+                terminal?.writeLine(event.data["data"]);
                 break;
             case "reading":
-                terminal === null || terminal === void 0 ? void 0 : terminal.readKey().then((input) => {
-                    broadcastChannelClient === null || broadcastChannelClient === void 0 ? void 0 : broadcastChannelClient.postMessage({ type: "input", data: input });
+                terminal?.readKey().then((input) => {
+                    worker?.postMessage({ type: "input", data: input });
                 });
                 break;
             case "print":
-                terminal === null || terminal === void 0 ? void 0 : terminal.writeKey(event.data["data"]);
+                terminal?.writeKey(event.data["data"]);
                 break;
             default:
                 console.error("unknown message type");
         }
     });
-    if (worker) {
-        terminal.writeLine("brainfvck execution environment successfully loaded");
-    }
-}));
+}
+function terminateWorker() {
+    worker?.terminate();
+    terminal?.writeLine("terminated");
+}
+function runProgram() {
+    runWorker();
+    const sourceCodeElement = document.getElementById(sourceCodeId);
+    worker?.postMessage({ type: "run", data: sourceCodeElement.value });
+}
+window.addEventListener("load", async () => {
+    terminal = new Terminal();
+    terminal.writeLine("started");
+});
 //# sourceMappingURL=app.js.map
